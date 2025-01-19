@@ -1,62 +1,33 @@
-import streamlit as st
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
-from langchain.chains.conversation.memory import ConversationBufferWindowMemory
-from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.vectorstores import Chroma
-from langchain.llms import OpenAI
-from langchain_openai import ChatOpenAI
-from langchain.docstore.document import Document
 import os
-import openai
-from langchain_community.document_loaders import PyPDFLoader
-from langchain.schema import Document
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+import streamlit as st
+from langchain.chat_models import ChatOpenAI
+from langchain.memory import ConversationBufferWindowMemory
+from langchain.chains import RetrievalQA
+from langchain.vectorstores import Chroma
+from langchain.embeddings import HuggingFaceEmbeddings
 
-
-# Chargement de ma clé openAI
-
+# Chargement de ma clé OpenAI
 api_key = os.getenv("OPENAI_API_KEY")
 
 if api_key:
     print("Clé API récupérée avec succès !")
 else:
-    print("Erreur : La clé API n'a pas été trouvée.")
+    st.error("Erreur : La clé API OpenAI n'a pas été trouvée.")
+    st.stop()
 
-from openai import OpenAI
-openai.api_key = api_key
+# Configuration du vectorstore
+embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+vectorstore = Chroma(
+    collection_name="articles_reglementaires",
+    persist_directory="./data/chroma_db3",
+    embedding_function=embedding_model
+)
 
-
-# Chargement des documents et création du vecteur store
-# a reprendre pour se connecter a un volume persitent de données
-
-@st.cache_resource
-def load_vectorstore():
-    
-    loader = PyPDFLoader("../src/Conception et construction bas carbone.pdf")
-    data = loader.load()
-    content=data[0]
-
-    chunk_size=1000
-    chunk_overlap=200
-    rc_splitter = RecursiveCharacterTextSplitter(
-        separators=["\n\n","\n"," ",""],
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap)
-
-    chunks = rc_splitter.split_text(content.page_content)
-
-    docs= [Document(page_content=chunk) for chunk in chunks]
-
-    embedding_function = OpenAIEmbeddings(api_key=api_key, model='text-embedding-3-small')
-    vectorstore = Chroma.from_documents(docs, embedding=embedding_function, persist_directory="./chroma_db")
-
-    return vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 2})
-
-retriever = load_vectorstore()
+# Définition du retriever
+retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 5})
 
 # Initialisation du modèle et de la mémoire
-llm = ChatOpenAI(model="gpt-4", api_key=api_key)
+llm = ChatOpenAI(model="gpt-4o", api_key=api_key)
 memory = ConversationBufferWindowMemory(k=5, return_messages=True)
 
 # Initialisation de la chaîne
@@ -78,21 +49,16 @@ st.sidebar.write("Promotion Septembre-2024")
 
 st.sidebar.image("../src/datascientest.png", caption="Datascientest")
 
-for _ in range(20):
-    st.sidebar.empty()
-    
 st.sidebar.write("David MICHEL")
 st.sidebar.write("Charafeddine MECHRI")
 st.sidebar.write("Marine MERLE")
-
-
 
 # Historique de la conversation
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
 # Champ de saisie utilisateur
-user_input = st.text_input("Vous :", placeholder="Entrez votre question ici...", key="user_input")
+user_input = st.text_input("Vous :", placeholder="Entrez votre question ici...")
 
 if user_input:
     # Ajouter la question utilisateur à l'historique
